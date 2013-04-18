@@ -1,6 +1,6 @@
 Memory Managment Unit
 
-CS481 Spring 2013
+Made for my operating systems class
 
 To execute:
 
