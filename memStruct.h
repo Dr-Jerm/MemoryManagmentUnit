@@ -30,11 +30,30 @@ typedef struct{
   unsigned int address; // the 32-bit hexadecimal address being referenced by the process. 
 } Trace;
 
+// PHYSICAL FRAME
+typedef struct{
+  int num;
+  int pid;
+  int lastUsed;
+  int useCount;
+} PhysicalFrame;
+
+// PAGE TABLE ENTRY
+typedef struct{
+  unsigned long* virtAddress;
+  unsigned int page; // page number
+  int present; // 1-yes, 0-no
+  int dirty; // 1-yes, 0-no
+  int pid; // process ID of entry
+  PhysicalFrame* physicalFrame; 
+} PageTableEntry;
+
 // TLB ENTRY
 typedef struct{
-  clock_t lastUsed;
+  unsigned int lastUsed;
+  int used;
   unsigned int* virtAddress;
-  int physFrameNum;
+  PageTableEntry* page;
 } TLB_Entry;
 
 // TLB
@@ -43,17 +62,6 @@ typedef struct{
   int count;
   TLB_Entry* cache;
 } TLB;
-
-// PAGE TABLE ENTRY
-typedef struct{
-  unsigned long* virtAddress;
-  int present; // 1-yes, 0-no
-  int dirty; // 1-yes, 0-no
-  int pid; // process ID of entry
-  int lastUsed; // time of last use
-  int useCount; // number of times used
-  int physFrameNum; 
-} PageTableEntry;
 
 // PAGE TABLE
 typedef struct{
@@ -73,12 +81,6 @@ typedef struct{
   float percentDirtyEvict;
 } ProcessStats;
 
-typedef struct{
-  int pid;
-  PageTable* pgtbl;
-  ProcessStats stats;
-} MMUProcess;
-
 // SIM STATS
 typedef struct{
   float overallLat;
@@ -91,6 +93,14 @@ typedef struct{
   int dirtyEvict;
   float percentDirtyEvict;
 } SimStats;
+
+// MMUProcess
+typedef struct{
+  int pid;
+  PageTable* pgtbl;
+  ProcessStats stats;
+} MMUProcess;
+
 
 // MMUSIM
 typedef struct{
@@ -113,7 +123,9 @@ typedef struct{
   TLB* tlb; // pointer to the TLB
   PageTable* pgtbl; // Page table
 
+  // Physical frame managment
   Dllist freePhysicalFrames;
+  Dllist usedPhysicalFrames;
 } MMUSim;
 
 

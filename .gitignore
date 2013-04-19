@@ -1,6 +1,7 @@
 # Compiled Source #
 ###################
 mmu
+trace_gen
 *.o
 
 # Vim Metadata #
