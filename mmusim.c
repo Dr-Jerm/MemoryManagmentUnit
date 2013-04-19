@@ -98,13 +98,6 @@ void setupSim(Config* conf, MMUSim* sim){
   tlb->size = sim->tlbSz;
   sim->tlb = tlb;
   
-/*  
-  PageTable* pageTable = malloc(sizeof(PageTable));
-  PageTableEntry* pageArray = malloc(sim->pageEntries * sizeof(PageTableEntry));
-  pageTable->table = pageArray;
-  pageTable->size = sim->pageEntries;
-  sim->pgtbl = pageTable;
-*/
   // Setup phyiscal frames
   sim->usedPhysicalFrames = new_dllist();
   sim->freePhysicalFrames = new_dllist();
@@ -116,6 +109,19 @@ void setupSim(Config* conf, MMUSim* sim){
     pf->num = i;
     dll_append(sim->freePhysicalFrames, new_jval_v(pf));
   }
+}
+
+void contextSwitch(MMUSim* sim){
+  TLB* tlb;
+  tlb = sim->tlb;
+  TLB_Entry* cache = tlb->cache;
+
+  int i;
+  for( i = 0; i < tlb->size; i++){
+    TLB_Entry* entry;
+    entry = &cache[i];
+    entry->used = 0;
+  } 
 }
 
 MMUProcess* getProcess(MMUSim* sim, int* pid){
@@ -163,7 +169,7 @@ void getPageNumOffset(MMUSim* sim, unsigned int addr, unsigned int* pageNum, uns
   *pageOffset = offset;  
 }
 
-PhysicalFrame* checkTLB(MMUSim* sim, unsigned int addr){
+PageTableEntry* checkTLB(MMUSim* sim, unsigned int pageNum){
   TLB* tlb;
   tlb = sim->tlb;
   TLB_Entry* cache = tlb->cache;
@@ -172,14 +178,14 @@ PhysicalFrame* checkTLB(MMUSim* sim, unsigned int addr){
   for( i = 0; i < tlb->size; i++){
     TLB_Entry* entry;
     entry = &cache[i];
-    if(entry->virtAddress == addr && entry->used == 1){
+    if(entry->used == 1 && entry->page->page == pageNum){
       clock_t curr;
       curr = clock();
       entry->lastUsed = curr;
       PhysicalFrame* frame;
       frame = entry->page->physicalFrame;
       frame->lastUsed = curr;
-      return frame;
+      return entry->page;
     }
   }
   return -1; 
@@ -216,12 +222,16 @@ int addPageToTlb(MMUSim* sim, unsigned int addr, PageTableEntry* pte){
       return 1;
     }
   }
-  if(count >= sim->tlbSz){
+  if(count >= tlb->size){
     if(sim->log){ fprintf(stderr, "\tTLB eviction? yes\n" );}
     TLB_Entry* evicted;
     evicted = &cache[oldestIndex];
 
     if(sim->log){ fprintf(stderr, "\tpage %d evicted from TLB\n",evicted->page->page );}
+
+    evicted->virtAddress = addr;
+    evicted->page = pte;
+    evicted->lastUsed = clock();
 
   }
 
@@ -229,15 +239,12 @@ int addPageToTlb(MMUSim* sim, unsigned int addr, PageTableEntry* pte){
 
 }
 
-PageTableEntry* checkPageTable(MMUSim* sim, PageTable* pageTable, Trace* trace){
+PageTableEntry* checkPageTable(MMUSim* sim, PageTable* pageTable, unsigned int pageNum){
   PageTableEntry* table = pageTable->table;
-
-  int offsetBits = sim->offsetBits;
-  unsigned int pageIndex = trace->address;
-  pageIndex = pageIndex >> offsetBits;
    
-  return &table[pageIndex];
+  return &table[pageNum];
 }
+
 
 PhysicalFrame* findFreePhysicalPage(MMUSim* sim){
   Dllist freeFrames;
@@ -261,7 +268,7 @@ PhysicalFrame* findFreePhysicalPage(MMUSim* sim){
 
 }
 
-PhysicalFrame* findPtEvict(MMUSim* sim){
+void PfEvict(MMUSim* sim){
   Dllist freeFrames;
   Dllist usedFrames;
   freeFrames = sim->freePhysicalFrames;
@@ -278,16 +285,83 @@ PhysicalFrame* findPtEvict(MMUSim* sim){
 
   PhysicalFrame* evictFrame;
 
-  if(rep == 1){ // FIFO
+  if(rep == 1){ // FIFO///////////////////////////////
+    // nothing is needed, FIFO happens automatically
+    evictFrame = uFrame->val.v;                     
+  }//////////////////////////END FIFO/////////////////
 
-  } else if(rep == 2){ // LRU
+  else if(rep == 2){ // LRU///////////////////////////
+    
+    PhysicalFrame* oldFrame;
+    Dllist olduFrame;
+    unsigned int oldTime = UINT_MAX;
 
-  } else if(rep == 3){ // LFU
+    while(uFrame != uNil){
+      evictFrame = uFrame->val.v;
 
-  } else if(rep == 4){ // MFU
+      if(evictFrame->lastUsed < oldTime){
+        oldFrame = evictFrame;
+        olduFrame = uFrame;
+        oldTime = evictFrame->lastUsed;
+      }
+      uFrame = uFrame->flink;
+    }
 
-  } else{ // RANDOM
-    int max = sim->pageEntries;
+    evictFrame = oldFrame;
+    uFrame = olduFrame;
+
+  } ////////////////////END LRU//////////////////////
+
+  else if(rep == 3){ // LFU////////////////////////
+
+    PhysicalFrame* oldFrame;
+    Dllist olduFrame;
+    int oldUse = UINT_MAX;
+
+    while(uFrame != uNil){
+      evictFrame = uFrame->val.v;
+
+      if(evictFrame->useCount < oldUse){
+        oldFrame = evictFrame;
+        olduFrame = uFrame;
+        oldUse = evictFrame->useCount;
+      }
+      uFrame = uFrame->flink;
+    }
+
+    evictFrame = oldFrame;
+    uFrame = olduFrame;
+
+
+
+  } /////////////////////END LFU//////////////////////
+
+  else if(rep == 4){ // MFU/////////////////////////
+
+    PhysicalFrame* oldFrame;
+    Dllist olduFrame;
+    int oldUse = 0;
+
+    while(uFrame != uNil){
+      evictFrame = uFrame->val.v;
+
+      if(evictFrame->useCount > oldUse){
+        oldFrame = evictFrame;
+        olduFrame = uFrame;
+        oldUse = evictFrame->useCount;
+      }
+      uFrame = uFrame->flink;
+    }
+
+    evictFrame = oldFrame;
+    uFrame = olduFrame;
+
+
+
+  } ////////////////////END MFU//////////////////////
+
+  else{ // RANDOM///////////////////////////////////
+    int max = sim->numFrames;
     int randomIndex = ((double) rand() / (((double)RAND_MAX)+1)) * (max+1);
 
     
@@ -300,10 +374,10 @@ PhysicalFrame* findPtEvict(MMUSim* sim){
     }
     evictFrame = uFrame->val.v;
     
-  }
+  }///////////////// END RANDOM////////////////////
 
-  return evictFrame;
-
+  dll_append(freeFrames, new_jval_v(evictFrame));
+  dll_delete_node(uFrame);
 }
 
 
@@ -316,12 +390,19 @@ void runSim(MMUSim* sim, Dllist* traces){
   Dllist t;
   t  = dll_first(*traces);
 
+  MMUProcess* currProc;
+
   while(t != nil){
     Trace* trace;
     trace = t->val.v;
 
     MMUProcess* proc;
     proc = getProcess(sim, trace->pid);
+
+    if(currProc != proc){
+      contextSwitch(sim);
+    }
+    currProc = proc;
 
     ProcessStats* pStat;
     pStat = &proc->stats;
@@ -342,29 +423,34 @@ void runSim(MMUSim* sim, Dllist* traces){
       fprintf(stderr, "Process[%u]: %s 0x%x (page: %u, offset: %u)\n",
         trace->pid, operation, trace->address, pageNum, pageOffset);
     }
-
-    PhysicalFrame* tlbHit;
-    tlbHit = checkTLB(sim, trace->address);
-    if((int)tlbHit != -1){
+    // Is the PTE in the TLB?
+    PageTableEntry* tlbHit;
+retry:
+    tlbHit = checkTLB(sim, pageNum);
+    if((int)tlbHit != -1){ // TLB hit
       if(sim->log) {fprintf(stderr, "\tTLB hit? yes\n");}
       simStats->overallLat = simStats->overallLat + sim->memLat;
       // if write, mark dirty
-      // return frame number
-      
-    }else{
+      if(op == 2){ // Is a write operation?
+        tlbHit->dirty = 1;
+      }
+      if(sim->log) {fprintf(stderr, "\tpage %d in frame %d\n", pageNum, tlbHit->physicalFrame->num);}
+
+    }else{ // TLB miss
       if(sim->log) {fprintf(stderr, "\tTLB hit? no\n");}
       pStat->tlbMisses = pStat->tlbMisses + 1;
       simStats->tlbMisses = simStats->tlbMisses + 1;
       
-      PageTableEntry* pte;
-      pte = checkPageTable(sim, proc->pgtbl, trace);
 
-      if(pte->present){
+      // Is the Physical Frame of the PTE present?
+      PageTableEntry* pte;
+      pte = checkPageTable(sim, proc->pgtbl, pageNum);
+      if(pte->present){ // Present bit is set
         if(sim->log) {fprintf(stderr, "\tPage fault? no\n");}
         addPageToTlb(sim, trace->address, pte);
-        // do tlb load
         // retry
-      } else {
+        goto retry;
+      } else { // Physical frame is not loaded (present)
         if(sim->log) {fprintf(stderr, "\tPage fault? yes\n");}
         pStat->pageFaults = pStat->pageFaults + 1;
         simStats->pageFaults = simStats->pageFaults + 1;
@@ -372,41 +458,56 @@ void runSim(MMUSim* sim, Dllist* traces){
         // Is there room?
         PhysicalFrame* pfn;
         pfn = findFreePhysicalPage(sim);
-        if(pfn != -1){
+        if(pfn != -1){ // We found a free physical frame
           if(sim->log) {fprintf(stderr, "\tMain memory eviction? no\n");}
           simStats->overallLat = simStats->overallLat + sim->diskLat;
+
+        } else { // no physical frame was found, need to evict
+          if(sim->log) {fprintf(stderr, "\tMain memory eviction? yes\n");}
+
+          // Update evicted PTE
+          PhysicalFrame* evPte; // evicted PTE
+          PfEvict(sim);
+          evPte = findFreePhysicalPage(sim);
+          MMUProcess* evProc;
+          evProc = getProcess(sim, evPte->pid);
+          PageTableEntry* evPageTable;
+          evPageTable = evProc->pgtbl->table;
+          unsigned int evIndex = evPte->pageNum;
+          PageTableEntry* evPageTableEntry; // evicted PageTableEntry
+          evPageTableEntry = &evPageTable[evIndex];
+          evPageTableEntry->present = 0;
+          pfn = evPte;
+
+          // clean eviction?
+          if(evPageTableEntry->dirty){ // the frame in memory is dirty and needs disk write
+            if(sim->log) {fprintf(stderr, "\tProcess %d page %u (dirty) evicted from memory\n", evProc->pid, evPte->pageNum);}
+
+            pStat->dirtyEvict = pStat->dirtyEvict + 1;
+            simStats->dirtyEvict = simStats->dirtyEvict + 1;
+            // wite to disk + disk access
+            simStats->overallLat = simStats->overallLat + sim->diskLat;
+            
+          } else { // frame is clean
+            if(sim->log) {fprintf(stderr, "\tProcess %d page %u (clean) evicted from memory\n", evProc->pid, evPte->pageNum);}
+
+            pStat->cleanEvict = pStat->cleanEvict + 1;
+            simStats->cleanEvict = simStats->cleanEvict + 1;
+    
+          }
+          // update PTE
+        }
           pte->page = pageNum;
           pte->physicalFrame = pfn;
           pte->pid = proc->pid;
           pte->present = 1;
           pfn->pid = proc->pid;
-          // update PTE (present bit = 1) + memory access
+          pfn->pageNum = pageNum;
+
           // update tlb
           addPageToTlb(sim, trace->address, pte);
-          // retry
-        } else {
-          if(sim->log) {fprintf(stderr, "\tMain memory eviction? yes\n");}
-
-          PageTableEntry* evPte; // evicted PTE
-          evPte = findPtEvict(sim);
-
-          // clean eviction?
-          if(pte->dirty){
-            pStat->dirtyEvict = pStat->dirtyEvict + 1;
-            simStats->dirtyEvict = simStats->dirtyEvict + 1;
-            // wite to disk + disk access
-            
-          } else {
-            pStat->cleanEvict = pStat->cleanEvict + 1;
-            simStats->cleanEvict = simStats->cleanEvict + 1;
-    
-          }
-          // update old PTE (set present bit to 0)
-          // load into memory
-          // update new PTE (set present bit to 1)
-          // update tlb
-          // retry
-        }
+ 
+          goto retry;
       }
     }
     
@@ -416,12 +517,29 @@ void runSim(MMUSim* sim, Dllist* traces){
   
 }
 
+void sortAndPrintProcStats(Dllist processes){
+  Dllist nil;
+  nil = dll_nil(processes);
+  Dllist p;
+  p = dll_first(processes);
+
+  MMUProcess* currProc;
+
+  while(p != nil){
+    MMUProcess* proc;
+    proc = p->val.v;
+
+  }
+
+
+}
+
 void endSim(MMUSim* sim){
   SimStats simStats;
   simStats = sim->simStats;
   printf("\n"); 
   printf("Overall latency (milliseconds): %f.\n", simStats.overallLat);
-  printf("Average memory access latency (milliseconds/reference): %f.\n", simStats.avMemAccessLat);
+  printf("Average memory access latency (milliseconds/reference): %f.\n", simStats.overallLat/simStats.memoryRef);
   printf("Slowdown: %f.\n", simStats.slowdown);
 
   printf("\n");
@@ -438,6 +556,8 @@ void endSim(MMUSim* sim){
     percentDirty = simStats.dirtyEvict / (simStats.cleanEvict + simStats.dirtyEvict);
   }
   printf("\tPercentage dirty evictions: %3.2f%\n", percentDirty*100);
+
+//  sortAndPrintProcStats(sim->processes);
 }
 
 

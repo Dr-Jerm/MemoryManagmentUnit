@@ -34,7 +34,8 @@ typedef struct{
 typedef struct{
   int num;
   int pid;
-  int lastUsed;
+  unsigned int pageNum;
+  unsigned int lastUsed;
   int useCount;
 } PhysicalFrame;
 
