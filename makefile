@@ -4,7 +4,7 @@ CC = gcc
 LIBS = libfdr.a
 CFLAGS = -O2 -g
 
-OBJS = mmusim.o parser.o
+OBJS = mmusim.o parser.o util.o
 #all: $(EXECUTABLES)
 
 #.SUFFIXES: .c .o

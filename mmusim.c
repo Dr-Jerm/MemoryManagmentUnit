@@ -8,6 +8,7 @@
 #ifndef MMUSIM
 #define MMUSIM
 #include "memStruct.h"
+#include "util.c"
 #include <time.h>
 #include <limits.h>
 
@@ -145,6 +146,7 @@ MMUProcess* getProcess(MMUSim* sim, int* pid){
   MMUProcess* ps;
   ps = malloc(sizeof(MMUProcess));
   ps->pid = pid;
+  ps->stats.pid = pid;
   dll_append(processList, new_jval_v(ps));
   PageTable* pageTable = malloc(sizeof(PageTable));
   PageTableEntry* pageArray = malloc(sim->pageEntries * sizeof(PageTableEntry));
@@ -435,6 +437,7 @@ retry:
         tlbHit->dirty = 1;
       }
       if(sim->log) {fprintf(stderr, "\tpage %d in frame %d\n", pageNum, tlbHit->physicalFrame->num);}
+      tlbHit->physicalFrame->useCount = tlbHit->physicalFrame->useCount + 1;
 
     }else{ // TLB miss
       if(sim->log) {fprintf(stderr, "\tTLB hit? no\n");}
@@ -517,22 +520,6 @@ retry:
   
 }
 
-void sortAndPrintProcStats(Dllist processes){
-  Dllist nil;
-  nil = dll_nil(processes);
-  Dllist p;
-  p = dll_first(processes);
-
-  MMUProcess* currProc;
-
-  while(p != nil){
-    MMUProcess* proc;
-    proc = p->val.v;
-
-  }
-
-
-}
 
 void endSim(MMUSim* sim){
   SimStats simStats;
@@ -553,11 +540,11 @@ void endSim(MMUSim* sim){
   
   float percentDirty = 0.0;
   if(simStats.cleanEvict > 0 || simStats.dirtyEvict > 0){
-    percentDirty = simStats.dirtyEvict / (simStats.cleanEvict + simStats.dirtyEvict);
+    percentDirty = (float)simStats.dirtyEvict / (float)(simStats.cleanEvict + simStats.dirtyEvict);
   }
   printf("\tPercentage dirty evictions: %3.2f%\n", percentDirty*100);
 
-//  sortAndPrintProcStats(sim->processes);
+  sortAndPrintProcStats(sim->processes);
 }
 
 
