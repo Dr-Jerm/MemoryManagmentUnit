@@ -1,3 +1,7 @@
+/* Jeremy Bernstein
+   CS481 Spring 2013
+   Lab 3 - MMU
+*/
 
 #ifndef MMUUTIL
 #define MMUUTIL
