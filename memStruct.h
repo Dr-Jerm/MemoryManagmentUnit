@@ -73,6 +73,12 @@ typedef struct{
   float percentDirtyEvict;
 } ProcessStats;
 
+typedef struct{
+  int pid;
+  PageTable* pgtbl;
+  ProcessStats stats;
+} MMUProcess;
+
 // SIM STATS
 typedef struct{
   float overallLat;
@@ -101,7 +107,7 @@ typedef struct{
   float diskLat;
   int log; // 1-on, 2-off
 
-  Dllist processStats; // array of process stats
+  Dllist processes; // array of process stats
   SimStats simStats;
 
   TLB* tlb; // pointer to the TLB

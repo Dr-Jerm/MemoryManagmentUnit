@@ -86,23 +86,24 @@ void setupSim(Config* conf, MMUSim* sim){
   printf("\n\n");
   sim->log = logging;
 
-  // Setup processStats
-  sim->processStats = new_dllist();
+  // Setup process list
+  sim->processes = new_dllist();
 
   // Setup TLB and Page table
+
   TLB* tlb = malloc(sizeof(TLB));
   TLB_Entry* tlbArray = malloc(sim->tlbSz * sizeof(TLB_Entry));
   tlb->cache = tlbArray;
   tlb->size = sim->tlbSz;
   sim->tlb = tlb;
   
-  
+/*  
   PageTable* pageTable = malloc(sizeof(PageTable));
   PageTableEntry* pageArray = malloc(sim->pageEntries * sizeof(PageTableEntry));
   pageTable->table = pageArray;
   pageTable->size = sim->pageEntries;
   sim->pgtbl = pageTable;
-
+*/
   // Setup phyiscal frames
   sim->freePhysicalFrames = new_dllist();
   int frameCount = sim->numFrames;
@@ -113,28 +114,34 @@ void setupSim(Config* conf, MMUSim* sim){
   }
 }
 
-ProcessStats* getProcessStats(MMUSim* sim, int* pid){
-  Dllist pStats;
-  pStats = sim->processStats;
+MMUProcess* getProcess(MMUSim* sim, int* pid){
+  Dllist processList;
+  processList = sim->processes;
   Dllist nil;
-  nil = dll_nil(pStats);
+  nil = dll_nil(processList);
   Dllist s;
-  s = dll_first(pStats);
+  s = dll_first(processList);
 
   while(s != nil){
-    ProcessStats* ps;
-    ps = s->val.v;
+    MMUProcess* proc;
+    proc = s->val.v;
 
-    if(ps->pid == pid){
-      return ps;
+    if(proc->pid == pid){
+      return proc;
     }
     s = s->flink;
   }
 
-  ProcessStats* ps;
-  ps = malloc(sizeof(ProcessStats));
+  MMUProcess* ps;
+  ps = malloc(sizeof(MMUProcess));
   ps->pid = pid;
-  dll_append(pStats, new_jval_v(ps));
+  dll_append(processList, new_jval_v(ps));
+  PageTable* pageTable = malloc(sizeof(PageTable));
+  PageTableEntry* pageArray = malloc(sim->pageEntries * sizeof(PageTableEntry));
+  pageTable->table = pageArray;
+  pageTable->size = sim->pageEntries;
+  ps->pgtbl = pageTable;
+
   return ps;
 }
 
@@ -171,9 +178,7 @@ unsigned int checkTLB(MMUSim* sim, unsigned int addr){
   return 0; 
 }
 
-PageTableEntry* checkPageTable(MMUSim* sim, Trace* trace){
-  PageTable* pageTable;
-  pageTable = sim->pgtbl;
+PageTableEntry* checkPageTable(MMUSim* sim, PageTable* pageTable, Trace* trace){
   PageTableEntry* table = pageTable->table;
 
   int offsetBits = sim->offsetBits;
@@ -237,8 +242,11 @@ void runSim(MMUSim* sim, Dllist* traces){
     Trace* trace;
     trace = t->val.v;
 
+    MMUProcess* proc;
+    proc = getProcess(sim, trace->pid);
+
     ProcessStats* pStat;
-    pStat = getProcessStats(sim, trace->pid);
+    pStat = &proc->stats;
     pStat->memoryRef = pStat->memoryRef + 1;
     simStats->memoryRef = simStats->memoryRef + 1;
     
@@ -271,7 +279,7 @@ void runSim(MMUSim* sim, Dllist* traces){
       simStats->tlbMisses = simStats->tlbMisses + 1;
       
       PageTableEntry* pte;
-      pte = checkPageTable(sim, trace);
+      pte = checkPageTable(sim, proc->pgtbl, trace);
 
       if(pte->present && trace->pid == pte->pid){
         if(sim->log) {fprintf(stderr, "\tPage fault? no\n");}
@@ -290,8 +298,7 @@ void runSim(MMUSim* sim, Dllist* traces){
           if(sim->log) {fprintf(stderr, "\tMain memory eviction? no\n");}
           simStats->overallLat = simStats->overallLat + sim->diskLat;
           pte->physFrameNum = pfn;
-          pte->present = 1;
-          
+          pte->present = 1; 
           // update PTE (present bit = 1) + memory access
           // update tlb
           // retry
