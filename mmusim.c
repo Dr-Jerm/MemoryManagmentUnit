@@ -350,6 +350,7 @@ void runSim(MMUSim* sim, Dllist* traces){
     PageTableEntry* tlbHit;
 retry:
     tlbHit = checkTLB(sim, pageNum);
+    simStats->overallLat = simStats->overallLat + sim->tlbLat;
     if((int)tlbHit != -1){ // TLB hit
       if(sim->log) {fprintf(stderr, "\tTLB hit? yes\n");}
       simStats->overallLat = simStats->overallLat + sim->memLat;
@@ -372,6 +373,7 @@ retry:
       if(pte->present){ // Present bit is set
         if(sim->log) {fprintf(stderr, "\tPage fault? no\n");}
         addPageToTlb(sim, trace->address, pte);
+        simStats->overallLat = simStats->overallLat + sim->tlbLat;
         // retry
         goto retry;
       } else { // Physical frame is not loaded (present)
@@ -384,8 +386,7 @@ retry:
         pfn = findFreePhysicalPage(sim);
         if(pfn != -1){ // We found a free physical frame
           if(sim->log) {fprintf(stderr, "\tMain memory eviction? no\n");}
-          simStats->overallLat = simStats->overallLat + sim->diskLat;
-
+         
         } else { // no physical frame was found, need to evict
           if(sim->log) {fprintf(stderr, "\tMain memory eviction? yes\n");}
 
@@ -423,13 +424,16 @@ retry:
         }
           pte->page = pageNum;
           pte->physicalFrame = pfn;
+          simStats->overallLat = simStats->overallLat + sim->diskLat;
           pte->pid = proc->pid;
           pte->present = 1;
           pfn->pid = proc->pid;
           pfn->pageNum = pageNum;
+          simStats->overallLat = simStats->overallLat + sim->memLat;
 
           // update tlb
           addPageToTlb(sim, trace->address, pte);
+          simStats->overallLat = simStats->overallLat + sim->tlbLat;
  
           goto retry;
       }
@@ -448,7 +452,8 @@ void endSim(MMUSim* sim){
   printf("\n"); 
   printf("Overall latency (milliseconds): %f.\n", simStats.overallLat);
   printf("Average memory access latency (milliseconds/reference): %f.\n", simStats.overallLat/simStats.memoryRef);
-  printf("Slowdown: %f.\n", simStats.slowdown);
+  float optimal = simStats.memoryRef * sim->memLat;
+  printf("Slowdown: %f.\n", simStats.overallLat/optimal);
 
   printf("\n");
   
