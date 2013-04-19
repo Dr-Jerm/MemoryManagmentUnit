@@ -200,11 +200,8 @@ void PfEvict(MMUSim* sim){
   freeFrames = sim->freePhysicalFrames;
   usedFrames = sim->usedPhysicalFrames;
   Dllist uNil;
-  Dllist fNil;
   uNil = dll_nil(usedFrames);
-  fNil = dll_nil(freeFrames);
   Dllist uFrame;
-  Dllist fFrame;
   uFrame = dll_first(usedFrames);
 
   int rep = sim->rep;
@@ -394,10 +391,10 @@ retry:
 
           // Update evicted PTE
           PhysicalFrame* evPte; // evicted PTE
-          PfEvict(sim);
-          evPte = findFreePhysicalPage(sim);
+          PfEvict(sim); // evict a frame based on the chosen policy
+          evPte = findFreePhysicalPage(sim); // go and find that frame
           MMUProcess* evProc;
-          evProc = getProcess(sim, evPte->pid);
+          evProc = getProcess(sim, evPte->pid); // get the process for the evicted frame
           PageTableEntry* evPageTable;
           evPageTable = evProc->pgtbl->table;
           unsigned int evIndex = evPte->pageNum;
