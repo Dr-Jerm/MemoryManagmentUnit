@@ -102,6 +102,15 @@ void setupSim(Config* conf, MMUSim* sim){
   pageTable->table = pageArray;
   pageTable->size = sim->pageEntries;
   sim->pgtbl = pageTable;
+
+  // Setup phyiscal frames
+  sim->freePhysicalFrames = new_dllist();
+  int frameCount = sim->numFrames;
+
+  int i;
+  for (i = 0; i < frameCount; i++){
+    dll_append(sim->freePhysicalFrames, new_jval_i(i));
+  }
 }
 
 ProcessStats* getProcessStats(MMUSim* sim, int* pid){
@@ -167,6 +176,52 @@ PageTableEntry* checkPageTable(MMUSim* sim, Trace* trace){
   pageTable = sim->pgtbl;
   PageTableEntry* table = pageTable->table;
 
+  int offsetBits = sim->offsetBits;
+  unsigned int pageIndex = trace->address;
+  pageIndex = pageIndex >> offsetBits;
+   
+  return &table[pageIndex];
+}
+
+int findFreePhysicalPage(MMUSim* sim){
+  Dllist freeFrames;
+  freeFrames = sim->freePhysicalFrames;
+  Dllist nil;
+  nil = dll_nil(freeFrames);
+  Dllist ffp;
+  ffp = dll_first(freeFrames);
+
+  if(ffp != nil){
+    int freeFrame;
+    freeFrame = ffp->val.i;
+    dll_delete_node(ffp);
+    return freeFrame;
+  } else {
+    return -1;
+  }
+
+}
+
+PageTableEntry* findPtEvict(MMUSim* sim){
+  PageTable* pageTable;
+  pageTable = sim->pgtbl;
+  PageTableEntry* table = pageTable->table;
+
+  int rep = sim->rep;
+
+  if(rep == 1){ // FIFO
+
+  } else if(rep == 2){ // LRU
+
+  } else if(rep == 3){ // LFU
+
+  } else if(rep == 4){ // MFU
+
+  } else{ // RANDOM
+    int max = sim->pageEntries;
+    int randomIndex = ((double) rand() / (((double)RAND_MAX)+1)) * (max+1);
+    return &table[randomIndex];
+  }
 }
 
 void runSim(MMUSim* sim, Dllist* traces){
@@ -206,6 +261,9 @@ void runSim(MMUSim* sim, Dllist* traces){
     tlbHit = checkTLB(sim, trace->address);
     if(tlbHit){
       if(sim->log) {fprintf(stderr, "\tTLB hit? yes\n");}
+      simStats->overallLat = simStats->overallLat + sim->memLat;
+      // if write, mark dirty
+      // return frame number
       
     }else{
       if(sim->log) {fprintf(stderr, "\tTLB hit? no\n");}
@@ -214,6 +272,53 @@ void runSim(MMUSim* sim, Dllist* traces){
       
       PageTableEntry* pte;
       pte = checkPageTable(sim, trace);
+
+      if(pte->present && trace->pid == pte->pid){
+        if(sim->log) {fprintf(stderr, "\tPage fault? no\n");}
+        // do tlb load
+        // retry
+      } else {
+        if(sim->log) {fprintf(stderr, "\tPage fault? yes\n");}
+        pStat->pageFaults = pStat->pageFaults + 1;
+        simStats->pageFaults = simStats->pageFaults + 1;
+
+        // Is there room?
+        int pfn;
+        pfn = findFreePhysicalPage(sim);
+//printf("found free frame at: %d\n",pfn);
+        if(pfn != -1){
+          if(sim->log) {fprintf(stderr, "\tMain memory eviction? no\n");}
+          simStats->overallLat = simStats->overallLat + sim->diskLat;
+          pte->physFrameNum = pfn;
+          pte->present = 1;
+          
+          // update PTE (present bit = 1) + memory access
+          // update tlb
+          // retry
+        } else {
+          if(sim->log) {fprintf(stderr, "\tMain memory eviction? yes\n");}
+
+          PageTableEntry* evPte; // evicted PTE
+          evPte = findPtEvict(sim);
+
+          // clean eviction?
+          if(pte->dirty){
+            pStat->dirtyEvict = pStat->dirtyEvict + 1;
+            simStats->dirtyEvict = simStats->dirtyEvict + 1;
+            // wite to disk + disk access
+            
+          } else {
+            pStat->cleanEvict = pStat->cleanEvict + 1;
+            simStats->cleanEvict = simStats->cleanEvict + 1;
+    
+          }
+          // update old PTE (set present bit to 0)
+          // load into memory
+          // update new PTE (set present bit to 1)
+          // update tlb
+          // retry
+        }
+      }
     }
     
     if(sim->log) {fprintf(stderr, "\n");}
@@ -235,6 +340,15 @@ void endSim(MMUSim* sim){
   printf("Overall\n");
   printf("\tMemory references: %d\n", simStats.memoryRef);
   printf("\tTLB misses: %d\n", simStats.tlbMisses);
+  printf("\tPage faults: %d\n", simStats.pageFaults);
+  printf("\tClean evictions: %d\n", simStats.cleanEvict);
+  printf("\tDirty evictions: %d\n", simStats.dirtyEvict);
+  
+  float percentDirty = 0.0;
+  if(simStats.cleanEvict > 0 || simStats.dirtyEvict > 0){
+    percentDirty = simStats.dirtyEvict / (simStats.cleanEvict + simStats.dirtyEvict);
+  }
+  printf("\tPercentage dirty evictions: %3.2f%\n", percentDirty*100);
 }
 
 

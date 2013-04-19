@@ -34,7 +34,7 @@ typedef struct{
 typedef struct{
   clock_t lastUsed;
   unsigned int* virtAddress;
-  unsigned int physAddress;
+  int physFrameNum;
 } TLB_Entry;
 
 // TLB
@@ -47,9 +47,12 @@ typedef struct{
 // PAGE TABLE ENTRY
 typedef struct{
   unsigned long* virtAddress;
+  int present; // 1-yes, 0-no
+  int dirty; // 1-yes, 0-no
   int pid; // process ID of entry
   int lastUsed; // time of last use
   int useCount; // number of times used
+  int physFrameNum; 
 } PageTableEntry;
 
 // PAGE TABLE
@@ -103,6 +106,8 @@ typedef struct{
 
   TLB* tlb; // pointer to the TLB
   PageTable* pgtbl; // Page table
+
+  Dllist freePhysicalFrames;
 } MMUSim;
 
 
