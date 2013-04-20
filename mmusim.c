@@ -180,6 +180,9 @@ void getPageNumOffset(MMUSim* sim, unsigned int addr, unsigned int* pageNum, uns
 void touchFrame(MMUSim* sim, PhysicalFrame* frame){
   frame->useCount = frame->useCount + 1;
   frame->lastUsed = clock();
+  if((int)sim->mfuFrame == 0 || frame->useCount > sim->mfuFrame->useCount){
+    sim->mfuFrame = frame;
+  }
   
 }
 
@@ -238,7 +241,6 @@ void PfEvict(MMUSim* sim){
   else if(rep == 2){ // LRU///////////////////////////
     
     PhysicalFrame* oldFrame;
-    Dllist olduFrame;
     unsigned int oldTime = UINT_MAX;
 
     PhysicalFrame* frameArray;
@@ -267,46 +269,38 @@ void PfEvict(MMUSim* sim){
   else if(rep == 3){ // LFU////////////////////////
 
     PhysicalFrame* oldFrame;
-    Dllist olduFrame;
-    int oldUse = UINT_MAX;
+    int oldUse = INT_MAX;
 
-    while(uFrame != uNil){
-      evictFrame = uFrame->val.v;
+    PhysicalFrame* frameArray;
+    frameArray = sim->physicalFrames;
+    PhysicalFrame* currentFrame;
 
-      if(evictFrame->useCount < oldUse){
-        oldFrame = evictFrame;
-        olduFrame = uFrame;
-        oldUse = evictFrame->useCount;
+    int i;
+    for (i = 0; i < sim->numFrames; i++){
+      currentFrame = &frameArray[i];
+
+      if(currentFrame->useCount < oldUse){
+        oldFrame = currentFrame;
+        oldUse = currentFrame->useCount;
       }
-      uFrame = uFrame->flink;
     }
 
     evictFrame = oldFrame;
-    uFrame = olduFrame;
 
+    Dllist* ref;
+    ref = evictFrame->listRef;
 
+    uFrame = *ref;
 
   } /////////////////////END LFU//////////////////////
 
   else if(rep == 4){ // MFU/////////////////////////
 
-    PhysicalFrame* oldFrame;
-    Dllist olduFrame;
-    int oldUse = 0;
+    evictFrame = sim->mfuFrame;
+    Dllist* ref;
+    ref = evictFrame->listRef;
 
-    while(uFrame != uNil){
-      evictFrame = uFrame->val.v;
-
-      if(evictFrame->useCount > oldUse){
-        oldFrame = evictFrame;
-        olduFrame = uFrame;
-        oldUse = evictFrame->useCount;
-      }
-      uFrame = uFrame->flink;
-    }
-
-    evictFrame = oldFrame;
-    uFrame = olduFrame;
+    uFrame = *ref;
 
 
 

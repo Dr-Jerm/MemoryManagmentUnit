@@ -132,6 +132,9 @@ typedef struct{
   JRB frameTree;
   Dllist freePhysicalFrames;
   Dllist usedPhysicalFrames;
+
+  // some sloppy code to get MFU working
+  PhysicalFrame* mfuFrame;
 } MMUSim;
 
 
