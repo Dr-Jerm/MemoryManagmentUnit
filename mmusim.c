@@ -101,15 +101,20 @@ void setupSim(Config* conf, MMUSim* sim){
   sim->tlb = tlb;
   
   // Setup phyiscal frames
+  sim->frameTree = make_jrb();
   sim->usedPhysicalFrames = new_dllist();
   sim->freePhysicalFrames = new_dllist();
   int frameCount = sim->numFrames;
 
+  sim->physicalFrames = malloc(sizeof(PhysicalFrame) * frameCount);
+  
   int i;
   for (i = 0; i < frameCount; i++){
-    PhysicalFrame* pf = malloc(sizeof(PhysicalFrame));
+    PhysicalFrame* pf = &sim->physicalFrames[i];
     pf->num = i;
     dll_append(sim->freePhysicalFrames, new_jval_v(pf));
+    Dllist listItem = dll_last(sim->freePhysicalFrames);
+    pf->listRef = listItem;
   }
 }
 
@@ -172,11 +177,19 @@ void getPageNumOffset(MMUSim* sim, unsigned int addr, unsigned int* pageNum, uns
   *pageOffset = offset;  
 }
 
+void touchFrame(MMUSim* sim, PhysicalFrame* frame){
+  frame->useCount = frame->useCount + 1;
+  frame->lastUsed = clock();
+  
+}
+
 PhysicalFrame* findFreePhysicalPage(MMUSim* sim){
   Dllist freeFrames;
   freeFrames = sim->freePhysicalFrames;
   Dllist usedFrames;
   usedFrames = sim->usedPhysicalFrames;
+  JRB tree;
+  tree = sim->frameTree;
   Dllist nil;
   nil = dll_nil(freeFrames);
   Dllist ffp;
@@ -187,6 +200,15 @@ PhysicalFrame* findFreePhysicalPage(MMUSim* sim){
     freeFrame = ffp->val.v;
     dll_delete_node(ffp);
     dll_append(usedFrames, new_jval_v(freeFrame));
+
+    if(sim->rep == 2){ // LRU, sort by time
+      jrb_insert_int(tree,freeFrame->lastUsed,new_jval_v(freeFrame));
+    } else if(sim->rep == 3){ // LFU, sort by lowCount
+      jrb_insert_int(tree,freeFrame->useCount,new_jval_v(freeFrame));
+    } else if (sim->rep == 4){ // MFU, sort by highCount
+      jrb_insert_int(tree,freeFrame->useCount,new_jval_v(freeFrame));
+    }  
+
     return freeFrame;
   } else {
     return -1;
@@ -219,19 +241,26 @@ void PfEvict(MMUSim* sim){
     Dllist olduFrame;
     unsigned int oldTime = UINT_MAX;
 
-    while(uFrame != uNil){
-      evictFrame = uFrame->val.v;
+    PhysicalFrame* frameArray;
+    frameArray = sim->physicalFrames;
+    PhysicalFrame* currentFrame;
 
-      if(evictFrame->lastUsed < oldTime){
-        oldFrame = evictFrame;
-        olduFrame = uFrame;
-        oldTime = evictFrame->lastUsed;
+    int i;
+    for (i = 0; i < sim->numFrames; i++){
+      currentFrame = &frameArray[i];
+
+      if(currentFrame->lastUsed < oldTime){
+        oldFrame = currentFrame;
+        oldTime = currentFrame->lastUsed;
       }
-      uFrame = uFrame->flink;
     }
 
     evictFrame = oldFrame;
-    uFrame = olduFrame;
+
+    Dllist* ref;
+    ref = evictFrame->listRef;
+
+    uFrame = *ref;
 
   } ////////////////////END LRU//////////////////////
 
@@ -284,23 +313,28 @@ void PfEvict(MMUSim* sim){
   } ////////////////////END MFU//////////////////////
 
   else{ // RANDOM///////////////////////////////////
-    int max = sim->numFrames;
+    int max = sim->numFrames - 1;
     int randomIndex = ((double) rand() / (((double)RAND_MAX)+1)) * (max+1);
 
-    
-    int i;
-    for( i  = 0; i < randomIndex; i++){
-      uFrame = uFrame->flink;
-    }
-    if(uFrame == uNil){
-      uFrame = uFrame->flink;
-    }
-    evictFrame = uFrame->val.v;
+    PhysicalFrame* frameArray;
+    frameArray = sim->physicalFrames;
+    PhysicalFrame* randomFrame;
+    randomFrame = &frameArray[randomIndex];
+
+    evictFrame = randomFrame;
+
+    Dllist* randomRef;
+    randomRef = evictFrame->listRef;
+
+    uFrame = *randomRef;
     
   }///////////////// END RANDOM////////////////////
 
-  dll_append(freeFrames, new_jval_v(evictFrame));
   dll_delete_node(uFrame);
+  dll_append(freeFrames, new_jval_v(evictFrame));
+  Dllist listItem = dll_last(sim->freePhysicalFrames);
+  evictFrame->listRef = listItem;
+
 }
 
 
@@ -359,7 +393,7 @@ retry:
         tlbHit->dirty = 1;
       }
       if(sim->log) {fprintf(stderr, "\tpage %d in frame %d\n", pageNum, tlbHit->physicalFrame->num);}
-      tlbHit->physicalFrame->useCount = tlbHit->physicalFrame->useCount + 1;
+      touchFrame(sim, tlbHit->physicalFrame);
 
     }else{ // TLB miss
       if(sim->log) {fprintf(stderr, "\tTLB hit? no\n");}

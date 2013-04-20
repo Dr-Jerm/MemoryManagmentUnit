@@ -7,6 +7,7 @@
 #define MEMSTRUCT
 
 #include <time.h>
+#include "jrb.c"
 #include "dllist.c"
 #include "jval.c"
 
@@ -37,6 +38,7 @@ typedef struct{
   unsigned int pageNum;
   unsigned int lastUsed;
   int useCount;
+  Dllist listRef;
 } PhysicalFrame;
 
 // PAGE TABLE ENTRY
@@ -125,6 +127,9 @@ typedef struct{
   PageTable* pgtbl; // Page table
 
   // Physical frame managment
+  PhysicalFrame* physicalFrames; // actuall array of physical Frames
+  // data structures to manage pointers to physical frames
+  JRB frameTree;
   Dllist freePhysicalFrames;
   Dllist usedPhysicalFrames;
 } MMUSim;

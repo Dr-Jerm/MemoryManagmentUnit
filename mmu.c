@@ -9,15 +9,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-//#include <math.h>
 #include "memStruct.h"
 #include "parser.c"
 #include "mmusim.c"
 
 
  // Main Config object
-Config conf = {.pms = 0, .frame = 0, .memLat = 0, .rep = 0,
-                 .tlbSz = 0, .tlbLat = 0, .diskLat = 0, .log = 0};
+Config conf;
 
 Dllist traceStack;
 
